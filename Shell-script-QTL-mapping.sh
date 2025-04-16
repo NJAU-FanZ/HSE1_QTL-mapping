@@ -1,5 +1,5 @@
 #!/bin/bash
-# Assembly preparation  
+# Assembly preparation
 conda create -n WGS \
 -c bioconda -c conda-forge \
 gatk4 bwa plink samtools=1.9 vcftools snpeff python=3.7 trimmomatic=0.35 fastqc
@@ -14,10 +14,10 @@ LEADING:3 TRAILING:3 SLIDINGWINDOW:4:13 MINLEN:50 2> sample.PE.trim.log
 # Quality cheak
 fastqc -t 12 -o out_path sample_1.fq.gz sample_2.fq.gz
 
-# Mapping  
+# Mapping
 bwa index Ref/P_INF_CHROMOSOMES.fasta
 
-gatk CreateSequenceDictionary -R Ref/P_INF_CHROMOSOMES.fasta -O Ref/P_INF_CHROMOSOMES.dict  
+gatk CreateSequenceDictionary -R Ref/P_INF_CHROMOSOMES.fasta -O Ref/P_INF_CHROMOSOMES.dict
 samtools faidx Ref/P_INF_CHROMOSOMES.fasta
 
 bwa mem -t 16 -M -B 3 \
@@ -25,6 +25,7 @@ bwa mem -t 16 -M -B 3 \
 CleanDATA/name_1.fq.gz CleanDATA/name_2.fq.gz \
 -f bam/name.sam
 
+# Converting to uniq bam files and sorting
 samtools sort -o bam/name.bam bam/name.sam
 
 gatk MarkDuplicates -I bam/name.bam \
@@ -36,20 +37,21 @@ samtools view -h -q 1 -F 256 -F 2048 \
 
 samtools index bam/name_uniq.bam
 
-# Variant calling and filtering  
-gatk HaplotypeCaller \
+# Variant calling and filtering
+gatk HaplotypeCaller -ERC GVCF \
 -R Ref/P_INF_CHROMOSOMES.fasta \
 -I bam/name_uniq.bam \
--O bam/name.gvcf.gz --emit-ref-confidence GVCF -stand-call-conf 30 \
->bam/name.HaplotypeCaller.log  
+-O bam/name.gvcf.gz \
+--emit-ref-confidence GVCF -stand-call-conf 30 \
+>bam/name.HaplotypeCaller.log
 
 gatk CombineGVCFs \
 -R Ref/P_INF_CHROMOSOMES.fasta \
 -V bam/name1.gvcf.gz \
-...  \
+...\
 -V bam/name115.gvcf.gz \
 -O results/combine-samples.gvcf \
->results/combine-samples.gvcf.log  
+>results/combine-samples.gvcf.log
 
 gatk GenotypeGVCFs \
 -R Ref/P_INF_CHROMOSOMES.fasta \
@@ -57,67 +59,50 @@ gatk GenotypeGVCFs \
 -O results/combine-samples.vcf \
 >results/combine-samples.GenotypeGvcf.log
 
-# SNP filtering and GWAS  
-gatk CombineGVCFs \
-  -R Ref/P_INF_CHROMOSOMES.fasta \
-  -V bam/name1.gcvf \
-  -V bam/name2.gcvf \
-...
-  -V bam/name115.gcvf \
-  -O results/combine-samples.gvcf \
-  >results/combine-samples.gvcf.log
-gatk GenotypeGVCFs \
-  -R Ref/P_INF_CHROMOSOMES.fasta  \
-  -V results/combine-samples.gvcf \
-  -O results/combine-samples.vcf \
-  >results/combine-samples.GenotypeGvcf.log
-  
 #SNP filting
 gatk SelectVariants -select-type SNP \
-  -V results/combine-samples.vcf \
-  -O results/combine-samples.snp.vcf \
-  >results/combine-samples.snp.log
-  
+-V results/combine-samples.vcf \
+-O results/combine-samples.snp.vcf \
+>results/combine-samples.snp.log
+
 gatk SelectVariants -select-type INDEL \
-  -V results/combine-samples.vcf \
-  -O results/combine-samples.indel.vcf \
-  >results/combine-samples.indel.log
-  
+-V results/combine-samples.vcf \
+-O results/combine-samples.indel.vcf \
+>results/combine-samples.indel.log
+
 gatk VariantFiltration -V results/combine-samples.snp.vcf \
-  -O results/combine-samples-filt.snp.vcf \
-  -filter "QD < 2.0" --filter-name "QD2"  \
-  -filter "QUAL < 30.0" --filter-name "QUAL30"  \
-  -filter "SOR > 3.0" --filter-name "SOR3"  \
-  -filter "FS > 60.0" --filter-name "FS60"  \
-  -filter "MQ < 40.0" --filter-name "MQ40"  \
-  >results/combine-snp-samples.filter.log
-  
+-O results/combine-samples-filt.snp.vcf \
+-filter "QD < 2.0" --filter-name "QD2"\
+-filter "QUAL < 30.0" --filter-name "QUAL30"\
+-filter "SOR > 3.0" --filter-name "SOR3"\
+-filter "FS > 60.0" --filter-name "FS60"\
+-filter "MQ < 40.0" --filter-name "MQ40"\
+>results/combine-snp-samples.filter.log
+
 gatk VariantFiltration -V results/combine-samples.indel.vcf \
-  -O results/combine-samples-filt.indel.vcf \
-  -filter "QD < 2.0" --filter-name "QD2"  \
-  -filter "QUAL < 30.0" --filter-name "QUAL30"  \
-  -filter "SOR > 3.0" --filter-name "SOR3"  \
-  -filter "FS > 60.0" --filter-name "FS60"  \
-  -filter "MQ < 40.0" --filter-name "MQ40"  \
-  >results/combine-indel-samples.filter.log
-  
+-O results/combine-samples-filt.indel.vcf \
+-filter "QD < 2.0" --filter-name "QD2"\
+-filter "QUAL < 30.0" --filter-name "QUAL30"\
+-filter "SOR > 3.0" --filter-name "SOR3"\
+-filter "FS > 60.0" --filter-name "FS60"\
+-filter "MQ < 40.0" --filter-name "MQ40"\
+>results/combine-indel-samples.filter.log
+
 gatk MergeVcfs -I results/combine-samples-filt.indel.vcf \
-  -I results/combine-samples-filt.snp.vcf \
-  -O results/Filter-combine-samples.vcf \
-  >results/Filter-combine-samples.log
-  
+-I results/combine-samples-filt.snp.vcf \
+-O results/Filter-combine-samples.vcf \
+>results/Filter-combine-samples.log
+
 vcftools --vcf results/Filter-combine-samples.vcf \
-  --max-missing 0.95 \
-  --maf 0.05 \
-  --min-meanDP 5 \
-  --recode \
-  --recode-INFO-all \
-  --remove-filtered-all \
-  --out results/Filter-samples
-  
-vcftools --vcf results/Filter-samples.recode.vcf \
-  --plink --out results/Filter-samples
-  
+--max-missing 0.95 \
+--maf 0.05 \
+--min-meanDP 5 \
+--recode \
+--recode-INFO-all \
+--remove-filtered-all \
+--out results/Filter-samples
+
+# Parameters for Kinship file
 plink --vcf results/Filter-samples.recode.vcf \
 --maf 0.05 --geno 0.1 --recode vcf-iid \
 --out results/Filter-samples-1 --allow-extra-chr
